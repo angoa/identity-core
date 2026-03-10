@@ -1,0 +1,126 @@
+# =============================================================================
+# identity-core — configuracion de desarrollo local
+# =============================================================================
+
+quarkus:
+
+  # ---------------------------------------------------------------------------
+  # Dev Services — deshabilitado, usamos H2 en memoria
+  # ---------------------------------------------------------------------------
+  devservices:
+    enabled: false
+
+  # ---------------------------------------------------------------------------
+  # Datasource H2 en memoria
+  # ---------------------------------------------------------------------------
+  datasource:
+    devservices:
+      enabled: false
+    db-kind: h2
+    username: identity
+    password: identity_pass
+    jdbc:
+      url: jdbc:h2:mem:identitydb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+
+  # ---------------------------------------------------------------------------
+  # Hibernate ORM
+  # ---------------------------------------------------------------------------
+  hibernate-orm:
+    enabled: true
+    log:
+      sql: false
+
+  # ---------------------------------------------------------------------------
+  # Flyway
+  # ---------------------------------------------------------------------------
+  flyway:
+    enabled: true
+    migrate-at-start: true
+    locations: db/migration
+    baseline-on-migrate: false
+
+  # ---------------------------------------------------------------------------
+  # OpenTelemetry — trazabilidad distribuida
+  # ---------------------------------------------------------------------------
+  otel:
+    enabled: true
+    traces:
+      enabled: true
+    metrics:
+      enabled: false
+    logs:
+      enabled: false
+    exporter:
+      otlp:
+        traces:
+          endpoint: http://localhost:4317
+          protocol: grpc
+    resource-attributes:
+      service.name=identity-core
+      service.version=1.0.0
+      service.namespace=atdt
+      deployment.environment=dev
+
+  # ---------------------------------------------------------------------------
+  # OpenAPI y Swagger UI
+  # ---------------------------------------------------------------------------
+  smallrye-openapi:
+    path: /q/openapi
+
+  swagger-ui:
+    path: /q/swagger-ui
+    always-include: true
+
+  # ---------------------------------------------------------------------------
+  # Logging
+  # ---------------------------------------------------------------------------
+  log:
+    level: INFO
+    console:
+      format: "%d{HH:mm:ss} %-5p traceId=%X{traceId} spanId=%X{spanId} [%c{2.}] %s%e%n"
+    category:
+      "io.serverus":
+        level: DEBUG
+      "org.flywaydb":
+        level: INFO
+
+# -----------------------------------------------------------------------------
+# Perfil desarrollo
+# -----------------------------------------------------------------------------
+"%dev":
+  quarkus:
+    otel:
+      sdk:
+        disabled: false
+
+# -----------------------------------------------------------------------------
+# Perfil produccion
+# -----------------------------------------------------------------------------
+"%prod":
+  quarkus:
+    swagger-ui:
+      always-include: false
+    hibernate-orm:
+      log:
+        sql: false
+    otel:
+      exporter:
+        otlp:
+          traces:
+            endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4317}
+
+# -----------------------------------------------------------------------------
+# Metadata OpenAPI
+# -----------------------------------------------------------------------------
+mp:
+  openapi:
+    extensions:
+      smallrye:
+        info:
+          title: Identity Core API
+          version: 1.0.0
+          description: Servicio de identidad digital
+          contact:
+            name: Arquitectura
+            email: arquitectura@
+        operationIdStrategy: METHOD
