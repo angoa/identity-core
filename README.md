@@ -1,13 +1,29 @@
 # identity-core
 
-![Build](https://img.shields.io/github/actions/workflow/status/angoa/identity-core/ci.yml?branch=main&label=build)
-![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)
-![Tests](https://img.shields.io/badge/tests-230%2B-brightgreen)
-![Java](https://img.shields.io/badge/java-21-blue)
-![Quarkus](https://img.shields.io/badge/quarkus-3.32.2-purple)
-![License](https://img.shields.io/badge/license-proprietary-lightgrey)
+[![Build](https://img.shields.io/github/actions/workflow/status/angoa/identity-core/ci.yml?branch=main&label=build)](https://github.com/angoa/identity-core/actions)
+[![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#ejecutar-tests)
+[![Tests](https://img.shields.io/badge/tests-230%2B-brightgreen)](#ejecutar-tests)
+[![Java](https://img.shields.io/badge/java-21-blue)](https://openjdk.org/projects/jdk/21/)
+[![Quarkus](https://img.shields.io/badge/quarkus-3.32.2-purple)](https://quarkus.io)
+[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#)
 
 Microservicio de identidad digital construido con **Quarkus 3.32.2**, **Java 21** y **arquitectura hexagonal**. Expone un API REST para el registro y gestión del ciclo de vida de personas, con observabilidad completa y preparado para despliegue en Kubernetes y OpenShift.
+
+---
+
+## Características
+
+- Arquitectura hexagonal (Ports & Adapters) — dominio desacoplado de infraestructura
+- Quarkus 3.32.2 sobre Java 21 con compilación JVM y Native (Mandrel)
+- Persistencia JPA con Oracle en producción, H2 en desarrollo
+- Migraciones automáticas con Flyway
+- Health checks SmallRye (`/q/health/live`, `/q/health/ready`, `/q/health/started`)
+- Métricas custom con Micrometer + Prometheus (`/q/metrics`)
+- Trazas distribuidas con OpenTelemetry OTLP/gRPC
+- Resiliencia: `@Timeout` + `@CircuitBreaker` + `@Retry` (MicroProfile Fault Tolerance)
+- Imágenes UBI9 hardened — `ubi9/openjdk-21-runtime` (JVM) y `ubi9/ubi-micro` (Native)
+- Despliegue Kubernetes / OpenShift con Pod Security Standards: **Restricted**
+- Cobertura 100% instrucciones y branches · Mutation coverage 96%
 
 ---
 
@@ -31,7 +47,7 @@ Microservicio de identidad digital construido con **Quarkus 3.32.2**, **Java 21*
 ```
 identity-core/
 │
-├── domain/                         # Núcleo — sin dependencias de frameworks
+├── domain/                         # Núcleo — sin dependencias de framework
 │   ├── model/                      # Aggregate Person + Value Objects
 │   │   └── vo/                     # Curp, FullName, BirthDate, PersonId, PersonStatus
 │   ├── exception/                  # DomainException, ValidationException (422),
@@ -58,18 +74,18 @@ HTTP Request
     │
     ▼
 PersonResource          (REST adapter — infrastructure)
-    │  @Valid, mapeo DTO → Command
+    │  @Valid + mapeo DTO → Command
     ▼
 PersonService           (domain service)
-    │  orquesta, emite métricas y trazas
+    │  orquesta · emite métricas · genera trazas (@WithSpan)
     ▼
-PersonRepository        (port — domain)
+PersonRepository        (port — domain interface)
     │
     ▼
 PersonRepositoryImpl    (JPA adapter — infrastructure)
     │  @Timeout + @CircuitBreaker + @Retry
     ▼
-Oracle / H2
+Oracle (prod) / H2 (dev)
 ```
 
 ---
@@ -78,10 +94,18 @@ Oracle / H2
 
 | Herramienta | Versión mínima | Notas |
 |---|---|---|
-| Java | 21 | JAVA_HOME configurado |
+| Java | 21 | `JAVA_HOME` configurado |
 | Maven | 3.9+ | o usar `./mvnw` incluido en el repo |
 | Docker / Podman | cualquiera reciente | solo para build de imagen |
 | Mandrel / GraalVM | jdk-21 | **solo** para build nativo — vive en el builder Docker, no se requiere local |
+
+```bash
+# Verificar Java
+java -version   # debe mostrar 21
+
+# Si JAVA_HOME no está configurado (Windows):
+set JAVA_HOME=C:\Program Files\Java\jdk-21
+```
 
 > **Base de datos:** H2 en memoria en desarrollo y tests. Oracle en producción — configurar via variables de entorno.
 
@@ -96,14 +120,18 @@ cd identity-core
 
 # Compilar y ejecutar en modo dev (hot reload)
 ./mvnw quarkus:dev
-
-# El API queda disponible en:
-#   http://localhost:8080/persons
-#   http://localhost:8080/q/swagger-ui
-#   http://localhost:8080/q/health
 ```
 
-> En modo `dev`, Quarkus levanta H2 en memoria y ejecuta las migraciones Flyway automáticamente.
+El API queda disponible en:
+
+| URL | Descripción |
+|---|---|
+| `http://localhost:8080/persons` | API REST |
+| `http://localhost:8080/q/swagger-ui` | Documentación interactiva |
+| `http://localhost:8080/q/health` | Health checks |
+| `http://localhost:8080/q/metrics` | Métricas Prometheus |
+
+> En modo `dev`, Quarkus levanta H2 en memoria y ejecuta las migraciones Flyway automáticamente. No se requiere base de datos externa.
 
 ---
 
@@ -113,7 +141,7 @@ cd identity-core
 # Tests + cobertura JaCoCo
 ./mvnw verify
 
-# Reporte de cobertura
+# Abrir reporte de cobertura
 # Windows:  start target\site\jacoco\index.html
 # macOS:    open target/site/jacoco/index.html
 
@@ -123,12 +151,15 @@ cd identity-core
 
 **Métricas actuales:**
 
-| Métrica | Valor |
-|---|---|
-| Tests | 230+ |
-| Cobertura instrucciones | 100% |
-| Cobertura branches | 100% |
-| Mutation coverage | 96% (techo alcanzable) |
+| Métrica | Valor | Referencia |
+|---|---|---|
+| Tests | 230+ | — |
+| Cobertura instrucciones | 100% | — |
+| Cobertura branches | 100% | — |
+| Mutation coverage | 96% | >90% se considera nivel alto |
+| Mutation strength | 97% | — |
+
+> El mutation coverage del 96% es el techo real del proyecto — las 4 mutaciones restantes son equivalentes estructurales en los `null checks` de los Value Objects.
 
 ---
 
@@ -152,12 +183,8 @@ docker run -p 8080:8080 identity-core:jvm
 ### Native — producción
 
 ```bash
-# El build nativo ocurre dentro del contenedor builder con Mandrel.
-# No se requiere GraalVM instalado localmente.
-
+# Mandrel vive dentro del builder — no se requiere instalación local.
 docker build -f src/main/docker/Dockerfile.native -t identity-core:native .
-# o con Podman:
-podman build -f src/main/docker/Dockerfile.native -t identity-core:native .
 
 # Ejecutar localmente
 docker run -p 8080:8080 identity-core:native
@@ -165,14 +192,15 @@ docker run -p 8080:8080 identity-core:native
 
 > El build nativo tarda ~10-15 minutos la primera vez. Las rebuilds incrementales son más rápidas gracias al cache de capas de dependencias Maven.
 
-**Comparación de imágenes:**
+**Comparación:**
 
-| | JVM | Native |
+| Característica | JVM | Native |
 |---|---|---|
 | Imagen base | `ubi9/openjdk-21-runtime:1.24` | `ubi9/ubi-micro:9.4` |
 | Tamaño final aprox. | ~280MB | ~65MB |
 | Tiempo de arranque | ~3-5s | <100ms |
 | Memoria RSS en reposo | ~150MB | ~50MB |
+| Uso recomendado | Dev / staging / debug | Producción |
 
 ---
 
@@ -185,15 +213,21 @@ kubectl apply -f k8s/deployment.yaml
 # Verificar pods
 kubectl -n identity-core get pods -w
 
+# Verificar servicio
+kubectl -n identity-core get svc
+
 # Ver logs
 kubectl -n identity-core logs -l app=identity-core -f
 ```
 
-Los manifiestos incluyen: `Namespace`, `ServiceAccount`, `Secret` (placeholder), `ConfigMap`, `Deployment`, `Service`, `HorizontalPodAutoscaler` e `Ingress`.
+Los manifiestos incluyen: `Namespace`, `ServiceAccount`, `Secret` (placeholder),
+`ConfigMap`, `Deployment`, `Service`, `HorizontalPodAutoscaler` e `Ingress`.
 
-> **Antes del apply:** reemplazar las credenciales Oracle en el `Secret` y la URL de la imagen en el `Deployment`. En producción gestionar el Secret via Vault o External Secrets Operator — nunca commitear credenciales reales.
+> **Antes del apply:** reemplazar las credenciales Oracle en el `Secret` y la URL
+> de la imagen en el `Deployment`. En producción gestionar el Secret via Vault o
+> External Secrets Operator — nunca commitear credenciales reales.
 
-**Hardening aplicado:**
+**Hardening aplicado — cumple Pod Security Standards: Restricted:**
 
 - `runAsNonRoot: true` + `runAsUser: 1001`
 - `allowPrivilegeEscalation: false`
@@ -201,8 +235,9 @@ Los manifiestos incluyen: `Namespace`, `ServiceAccount`, `Secret` (placeholder),
 - `capabilities.drop: ALL`
 - `seccompProfile: RuntimeDefault`
 - `automountServiceAccountToken: false`
-- Namespace con Pod Security Admission `restricted`
-- `topologySpreadConstraints` — distribuye réplicas en nodos distintos
+- Namespace con Pod Security Admission `restricted` (enforce + audit + warn)
+- `topologySpreadConstraints` — réplicas distribuidas en nodos distintos
+- `terminationGracePeriodSeconds: 30` — graceful shutdown de Quarkus
 
 ---
 
@@ -215,18 +250,17 @@ Documentación interactiva: [`/q/swagger-ui`](http://localhost:8080/q/swagger-ui
 ### Registrar persona
 
 ```bash
-POST /persons
-Content-Type: application/json
+curl -X POST http://localhost:8080/persons \
+  -H "Content-Type: application/json" \
+  -d '{
+    "curp": "MOAA850615HDFRZS09",
+    "firstName": "Rafael",
+    "lastName": "Morales",
+    "secondLastName": "Angoa",
+    "birthDate": "1985-06-15"
+  }'
 
-{
-  "curp": "MOAA850615HDFRZS09",
-  "firstName": "Rafael",
-  "lastName": "Morales",
-  "secondLastName": "Angoa",
-  "birthDate": "1985-06-15"
-}
-
-# Respuesta 201 Created
+# 201 Created
 {
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "curp": "MOAA850615HDFRZS09",
@@ -239,59 +273,47 @@ Content-Type: application/json
 ### Buscar por ID
 
 ```bash
-GET /persons/{id}
+curl http://localhost:8080/persons/550e8400-e29b-41d4-a716-446655440000
 
-# 200 OK — PersonResponse
-# 400 Bad Request — UUID con formato inválido
-# 404 Not Found
+# 200 OK · 400 UUID inválido · 404 Not Found
 ```
 
 ### Buscar por CURP
 
 ```bash
-GET /persons/curp/{curp}
+curl http://localhost:8080/persons/curp/MOAA850615HDFRZS09
 
-# 200 OK — PersonResponse
-# 404 Not Found
+# 200 OK · 404 Not Found
 ```
 
 ### Suspender persona
 
 ```bash
-PATCH /persons/{id}/suspend
-Content-Type: application/json
+curl -X PATCH http://localhost:8080/persons/550e8400-e29b-41d4-a716-446655440000/suspend \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Documentación vencida"}'
 
-{"reason": "Documentación vencida"}
-
-# 200 OK — StatusResponse
-# 404 Not Found
-# 409 Conflict — ya está suspendida
+# 200 OK · 404 Not Found · 409 Conflict (ya suspendida)
 ```
 
 ### Reactivar persona
 
 ```bash
-PATCH /persons/{id}/reactivate
-Content-Type: application/json
+curl -X PATCH http://localhost:8080/persons/550e8400-e29b-41d4-a716-446655440000/reactivate \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Documentación renovada"}'
 
-{"reason": "Documentación renovada"}
-
-# 200 OK — StatusResponse
-# 404 Not Found
-# 409 Conflict — ya está activa
+# 200 OK · 404 Not Found · 409 Conflict (ya activa)
 ```
 
 ### Dar de baja
 
 ```bash
-PATCH /persons/{id}/deactivate
-Content-Type: application/json
+curl -X PATCH http://localhost:8080/persons/550e8400-e29b-41d4-a716-446655440000/deactivate \
+  -H "Content-Type: application/json" \
+  -d '{"reason": "Solicitud del titular"}'
 
-{"reason": "Solicitud del titular"}
-
-# 200 OK — StatusResponse
-# 404 Not Found
-# 409 Conflict — ya está inactiva
+# 200 OK · 404 Not Found · 409 Conflict (ya inactiva)
 ```
 
 ### Estructura de error
@@ -312,7 +334,7 @@ Todos los errores retornan:
 
 ## Variables de entorno
 
-### Base de datos
+### Base de datos — **obligatorias en producción**
 
 | Variable | Descripción | Default (dev) |
 |---|---|---|
@@ -322,6 +344,7 @@ Todos los errores retornan:
 | `QUARKUS_DATASOURCE_PASSWORD` | Password | `identity_pass` |
 
 Ejemplo producción Oracle:
+
 ```bash
 QUARKUS_DATASOURCE_DB_KIND=oracle
 QUARKUS_DATASOURCE_JDBC_URL=jdbc:oracle:thin:@oracle-svc:1521/identitydb
@@ -329,7 +352,7 @@ QUARKUS_DATASOURCE_USERNAME=identity_user
 QUARKUS_DATASOURCE_PASSWORD=<secret>
 ```
 
-### Observabilidad
+### Observabilidad — **obligatorias en producción**
 
 | Variable | Descripción | Default |
 |---|---|---|
@@ -337,7 +360,7 @@ QUARKUS_DATASOURCE_PASSWORD=<secret>
 | `OTEL_SERVICE_NAME` | Nombre del servicio en trazas | `identity-core` |
 | `QUARKUS_LOG_LEVEL` | Nivel de log global | `INFO` |
 
-### Fault tolerance (repositorio)
+### Fault tolerance — opcionales (tienen defaults razonables)
 
 | Variable | Descripción | Default |
 |---|---|---|
@@ -354,43 +377,56 @@ QUARKUS_DATASOURCE_PASSWORD=<secret>
 | Endpoint | Tipo | Descripción |
 |---|---|---|
 | `/q/health/live` | Liveness | El proceso está vivo |
-| `/q/health/ready` | Readiness | BD disponible y lista |
-| `/q/health/started` | Startup | Arranque completado |
+| `/q/health/ready` | Readiness | BD disponible y lista para tráfico |
+| `/q/health/started` | Startup | Arranque completado (Flyway incluido) |
 
 ### Métricas (Micrometer + Prometheus)
 
 ```bash
-GET /q/metrics
+curl http://localhost:8080/q/metrics
 ```
 
 Métricas custom expuestas por `PersonService`:
 
-- `persons.registered.total` — contador de registros exitosos
-- `persons.registration.errors.total` — contador de errores de registro
-- `persons.status.changes.total` — contador de cambios de estado
-- `persons.registration.duration` — timer de duración del registro
+| Métrica | Tipo | Descripción |
+|---|---|---|
+| `persons.registered.total` | Counter | Registros exitosos |
+| `persons.registration.errors.total` | Counter | Errores de registro |
+| `persons.status.changes.total` | Counter | Cambios de estado |
+| `persons.registration.duration` | Timer | Duración del registro |
 
 ### Trazas distribuidas (OpenTelemetry)
 
-El servicio exporta trazas vía OTLP/gRPC al endpoint configurado en `OTEL_EXPORTER_OTLP_ENDPOINT`. Los spans incluyen `traceId` y `spanId` en todos los logs estructurados.
+El servicio exporta trazas vía OTLP/gRPC. Los spans incluyen `traceId` y
+`spanId` en todos los logs estructurados para correlación en Grafana.
 
-Stack de observabilidad recomendado:
+### Stack recomendado
 
 ```
-identity-core → Prometheus     → Grafana  (métricas)
-identity-core → Loki           → Grafana  (logs)
-identity-core → OTel Collector → Jaeger   (trazas)
+identity-core /q/metrics  →  Prometheus      →  Grafana  (métricas)
+identity-core stdout       →  Fluentd / Loki →  Grafana  (logs)
+identity-core OTLP :4317   →  OTel Collector →  Jaeger   (trazas)
 ```
 
 ---
 
 ## Decisiones de arquitectura (ADRs)
 
+Los ADRs documentan el contexto, alternativas evaluadas y justificación de las
+decisiones técnicas del proyecto. Se encuentran en `docs/adr/`.
+
 | ADR | Decisión | Estado |
 |---|---|---|
 | [ADR-001](docs/adr/ADR-001-imagen-base-contenedor.md) | Imagen base UBI9 sobre Distroless/Alpine | Aceptado |
-
-> Los ADRs documentan el contexto, alternativas evaluadas y justificación de las decisiones técnicas relevantes del proyecto.
+| [ADR-002](docs/adr/ADR-002-arquitectura-hexagonal.md) | Arquitectura hexagonal sobre MVC en capas | Aceptado |
+| [ADR-003](docs/adr/ADR-003-quarkus-sobre-spring-boot.md) | Quarkus sobre Spring Boot y Micronaut | Aceptado |
+| [ADR-004](docs/adr/ADR-004-lombok-javabean-accessors.md) | Lombok JavaBean accessors sobre fluent | Aceptado |
+| [ADR-005](docs/adr/ADR-005-h2-desarrollo-oracle-produccion.md) | H2 en desarrollo, Oracle en producción | Aceptado (temporal) |
+| [ADR-006](docs/adr/ADR-006-application-yaml.md) | `application.yaml` sobre `application.properties` | Aceptado |
+| [ADR-007](docs/adr/ADR-007-jacoco-offline-instrumentation.md) | JaCoCo offline instrumentation sobre agente runtime | Aceptado |
+| [ADR-008](docs/adr/ADR-008-inmemory-repository-fake.md) | `InMemoryPersonRepository` fake sobre Mockito | Aceptado |
+| [ADR-009](docs/adr/ADR-009-opentelemetry-withspan.md) | OpenTelemetry via `@WithSpan`, fuera del dominio | Aceptado |
+| [ADR-010](docs/adr/ADR-010-microprofile-fault-tolerance.md) | MicroProfile Fault Tolerance sobre Resilience4j | Aceptado |
 
 ---
 
@@ -405,18 +441,18 @@ identity-core/
 │   │   │   └── infrastructure/
 │   │   ├── resources/
 │   │   │   ├── application.yaml
-│   │   │   └── db/migration/        # Flyway migrations
+│   │   │   └── db/migration/           # Flyway migrations
 │   │   └── docker/
-│   │       ├── Dockerfile.jvm
-│   │       └── Dockerfile.native
+│   │       ├── Dockerfile.jvm          # JVM — dev / staging
+│   │       └── Dockerfile.native       # Native — producción
 │   └── test/
 │       └── java/io/serverus/
 ├── k8s/
-│   └── deployment.yaml
+│   └── deployment.yaml                 # Namespace + SA + CM + Deployment + SVC + HPA + Ingress
 ├── docs/
-│   └── adr/
-│       └── ADR-001-imagen-base-contenedor.md
+│   └── adr/                            # ADR-001 al ADR-010
 ├── .dockerignore
 ├── pom.xml
+├── mvnw
 └── README.md
 ```
