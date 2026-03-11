@@ -5,9 +5,9 @@
 [![Tests](https://img.shields.io/badge/tests-230%2B-brightgreen)](#ejecutar-tests)
 [![Java](https://img.shields.io/badge/java-21-blue)](https://openjdk.org/projects/jdk/21/)
 [![Quarkus](https://img.shields.io/badge/quarkus-3.32.2-purple)](https://quarkus.io)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#)
+[![License](https://img.shields.io/badge/license-Internal%20%2F%20Proprietary-lightgrey)](#)
 
-Microservicio de identidad digital construido con **Quarkus 3.32.2**, **Java 21** y **arquitectura hexagonal**. Expone un API REST para el registro y gestión del ciclo de vida de personas, con observabilidad completa y preparado para despliegue en Kubernetes y OpenShift.
+Microservicio de identidad digital construido con **Quarkus 3.32.2** sobre **Java 21**, siguiendo **arquitectura hexagonal**. Expone un API REST para el registro y gestión del ciclo de vida de personas, con observabilidad completa y preparado para despliegue en Kubernetes y OpenShift.
 
 ---
 
@@ -23,7 +23,7 @@ Microservicio de identidad digital construido con **Quarkus 3.32.2**, **Java 21*
 - Resiliencia: `@Timeout` + `@CircuitBreaker` + `@Retry` (MicroProfile Fault Tolerance)
 - Imágenes UBI9 hardened — `ubi9/openjdk-21-runtime` (JVM) y `ubi9/ubi-micro` (Native)
 - Despliegue Kubernetes / OpenShift con Pod Security Standards: **Restricted**
-- Cobertura 100% instrucciones y branches · Mutation coverage 96%
+- Cobertura 100% de instrucciones y branches, con mutation coverage de 96%
 
 ---
 
@@ -33,9 +33,9 @@ Microservicio de identidad digital construido con **Quarkus 3.32.2**, **Java 21*
 - [Requisitos](#requisitos)
 - [Setup local](#setup-local)
 - [Ejecutar tests](#ejecutar-tests)
-- [Build de imagen](#build-de-imagen)
+- [Build de contenedores](#build-de-contenedores)
 - [Despliegue en Kubernetes](#despliegue-en-kubernetes)
-- [API — Endpoints](#api--endpoints)
+- [API y endpoints](#api-y-endpoints)
 - [Variables de entorno](#variables-de-entorno)
 - [Observabilidad](#observabilidad)
 - [Decisiones de arquitectura (ADRs)](#decisiones-de-arquitectura-adrs)
@@ -97,7 +97,7 @@ Oracle (prod) / H2 (dev)
 | Java | 21 | `JAVA_HOME` configurado |
 | Maven | 3.9+ | o usar `./mvnw` incluido en el repo |
 | Docker / Podman | cualquiera reciente | solo para build de imagen |
-| Mandrel / GraalVM | jdk-21 | **solo** para build nativo — vive en el builder Docker, no se requiere local |
+| Mandrel / GraalVM | No requerido localmente | El build nativo se realiza dentro del builder Docker/Podman |
 
 ```bash
 # Verificar Java
@@ -163,7 +163,7 @@ El API queda disponible en:
 
 ---
 
-## Build de imagen
+## Build de contenedores
 
 ### JVM — desarrollo, staging, debugging
 
@@ -178,6 +178,7 @@ podman build -f src/main/docker/Dockerfile.jvm -t identity-core:jvm .
 
 # 3. Ejecutar localmente
 docker run -p 8080:8080 identity-core:jvm
+podman run -p 8080:8080 identity-core:jvm
 ```
 
 ### Native — producción
@@ -185,12 +186,15 @@ docker run -p 8080:8080 identity-core:jvm
 ```bash
 # Mandrel vive dentro del builder — no se requiere instalación local.
 docker build -f src/main/docker/Dockerfile.native -t identity-core:native .
+# o con Podman:
+podman build -f src/main/docker/Dockerfile.native -t identity-core:native .
 
 # Ejecutar localmente
 docker run -p 8080:8080 identity-core:native
+podman run -p 8080:8080 identity-core:native
 ```
 
-> El build nativo tarda ~10-15 minutos la primera vez. Las rebuilds incrementales son más rápidas gracias al cache de capas de dependencias Maven.
+> El build nativo puede tardar varios minutos la primera vez según el equipo. Las rebuilds incrementales son más rápidas gracias al cache de capas de dependencias Maven.
 
 **Comparación:**
 
@@ -227,7 +231,7 @@ Los manifiestos incluyen: `Namespace`, `ServiceAccount`, `Secret` (placeholder),
 > de la imagen en el `Deployment`. En producción gestionar el Secret via Vault o
 > External Secrets Operator — nunca commitear credenciales reales.
 
-**Hardening aplicado — cumple Pod Security Standards: Restricted:**
+**Hardening aplicado — manifiestos alineados con Pod Security Standards: Restricted:**
 
 - `runAsNonRoot: true` + `runAsUser: 1001`
 - `allowPrivilegeEscalation: false`
@@ -241,7 +245,7 @@ Los manifiestos incluyen: `Namespace`, `ServiceAccount`, `Secret` (placeholder),
 
 ---
 
-## API — Endpoints
+## API y endpoints
 
 Base URL: `http://localhost:8080`
 
@@ -352,7 +356,7 @@ QUARKUS_DATASOURCE_USERNAME=identity_user
 QUARKUS_DATASOURCE_PASSWORD=<secret>
 ```
 
-### Observabilidad — **obligatorias en producción**
+### Observabilidad — **recomendadas para operación estándar en producción**
 
 | Variable | Descripción | Default |
 |---|---|---|
@@ -404,7 +408,7 @@ El servicio exporta trazas vía OTLP/gRPC. Los spans incluyen `traceId` y
 
 ```
 identity-core /q/metrics  →  Prometheus      →  Grafana  (métricas)
-identity-core stdout       →  Fluentd / Loki →  Grafana  (logs)
+identity-core stdout       →  Fluent Bit / Fluentd →  Loki  →  Grafana  (logs)
 identity-core OTLP :4317   →  OTel Collector →  Jaeger   (trazas)
 ```
 
