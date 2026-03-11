@@ -1,5 +1,79 @@
-*
-!target/*-runner
-!target/*-runner.jar
-!target/lib/*
-!target/quarkus-app/*
+# =============================================================================
+# .dockerignore — identity-core
+# Reduce el build context enviado al daemon Docker/Podman.
+#
+# Regla de target/:
+#   Ignorar todo target/* excepto el fast-jar que necesita Dockerfile.jvm.
+#   Dockerfile.native compila dentro del builder — no lee target/ del host.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Build outputs
+# Ignorar todo target/ excepto el artefacto fast-jar de Quarkus.
+# Sin esta excepcion, Dockerfile.jvm falla con:
+#   COPY failed: file not found in build context
+# -----------------------------------------------------------------------------
+target/*
+!target/quarkus-app/
+!target/quarkus-app/**
+
+# -----------------------------------------------------------------------------
+# Control de versiones
+# -----------------------------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+
+# -----------------------------------------------------------------------------
+# IDE
+# -----------------------------------------------------------------------------
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+
+# -----------------------------------------------------------------------------
+# Maven local cache del host
+# El builder de Dockerfile.native usa su propio .m2 interno.
+# -----------------------------------------------------------------------------
+.m2/
+
+# -----------------------------------------------------------------------------
+# Reportes de tests y cobertura
+# -----------------------------------------------------------------------------
+**/*.exec
+**/jacoco/
+**/surefire-reports/
+**/pit-reports/
+
+# -----------------------------------------------------------------------------
+# Docker Compose — no forma parte de ninguna imagen
+# Nota: Dockerfile* y .dockerignore NO se excluyen — si el build se invoca
+# con -f apuntando a un Dockerfile fuera del workdir, Docker necesita
+# encontrarlo en el contexto.
+# -----------------------------------------------------------------------------
+docker-compose*.yml
+
+# -----------------------------------------------------------------------------
+# Documentacion — no va en la imagen
+# -----------------------------------------------------------------------------
+docs/
+README*
+*.md
+LICENSE
+
+# -----------------------------------------------------------------------------
+# Archivos temporales y de sistema
+# -----------------------------------------------------------------------------
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# -----------------------------------------------------------------------------
+# Manifiestos de plataforma — no van en la imagen
+# -----------------------------------------------------------------------------
+k8s/
+openshift/
+helm/

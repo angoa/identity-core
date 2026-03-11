@@ -1,0 +1,403 @@
+# =============================================================================
+# identity-core — manifiestos Kubernetes vainilla
+# Pod Security Standards: Restricted
+# Quarkus Native + UBI Micro
+#
+# Contenido:
+#   1. Namespace    — etiquetado PSA restricted (enforce + audit + warn)
+#   2. ServiceAccount
+#   3. Secret       — credenciales Oracle (placeholder — usar Vault/ESO en prod)
+#   4. ConfigMap    — configuracion no sensible
+#   5. Deployment   — hardened, non-root, seccomp, readOnlyRootFilesystem
+#   6. Service      — ClusterIP
+#   7. HPA          — autoescalado 2-6 replicas
+#   8. Ingress      — TLS termination (adaptar al ingress controller del cluster)
+#
+# Aplicar:
+#   kubectl apply -f deployment.yaml
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Namespace
+# Pod Security Admission en modo Restricted — Kubernetes >= 1.23.
+# enforce: rechaza pods que violan el estandar.
+# audit:   registra en el audit log sin rechazar.
+# warn:    envia advertencia al cliente (kubectl) sin rechazar.
+# Los tres modos juntos dan visibilidad completa durante la transicion.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: identity-core
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: latest
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: latest
+
+---
+# -----------------------------------------------------------------------------
+# 2. ServiceAccount dedicada
+# automountServiceAccountToken: false en el SA evita que cualquier pod que
+# la use monte el token por defecto. Se sobreescribe en el pod si se necesita.
+# identity-core no llama al API server de Kubernetes — no necesita el token.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: identity-core
+  namespace: identity-core
+automountServiceAccountToken: false
+
+---
+# -----------------------------------------------------------------------------
+# 3. Secret — credenciales Oracle
+# IMPORTANTE: este Secret es un placeholder de estructura.
+# En produccion gestionar via:
+#   - HashiCorp Vault + Vault Agent Injector
+#   - External Secrets Operator + AWS Secrets Manager / Azure Key Vault
+#   - Sealed Secrets (Bitnami) para GitOps
+# Nunca commitear valores reales en Git.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Secret
+metadata:
+  name: identity-core-db-credentials
+  namespace: identity-core
+type: Opaque
+stringData:
+  username: "identity_user"   # reemplazar antes de apply
+  password: "CHANGE_ME"       # reemplazar antes de apply
+
+---
+# -----------------------------------------------------------------------------
+# 4. ConfigMap — configuracion no sensible
+# Todos los valores sobreescribibles via env del pod sin modificar la imagen.
+# Las propiedades de fault tolerance mapean a los env vars de MicroProfile:
+#   REPO_READ_TIMEOUT_MS  -> ${REPO_READ_TIMEOUT_MS:2000} en application.yaml
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: identity-core-config
+  namespace: identity-core
+data:
+  QUARKUS_HTTP_HOST: "0.0.0.0"
+  QUARKUS_HTTP_PORT: "8080"
+  QUARKUS_DATASOURCE_DB_KIND: "oracle"
+  QUARKUS_DATASOURCE_JDBC_URL: "jdbc:oracle:thin:@oracle-svc.oracle.svc.cluster.local:1521/identitydb"
+  QUARKUS_FLYWAY_ENABLED: "true"
+  QUARKUS_FLYWAY_MIGRATE_AT_START: "true"
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability.svc.cluster.local:4317"
+  OTEL_SERVICE_NAME: "identity-core"
+  QUARKUS_LOG_LEVEL: "INFO"
+  REPO_READ_TIMEOUT_MS: "2000"
+  REPO_WRITE_TIMEOUT_MS: "5000"
+  REPO_CB_DELAY_MS: "30000"
+
+---
+# -----------------------------------------------------------------------------
+# 5. Deployment
+# -----------------------------------------------------------------------------
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identity-core
+  namespace: identity-core
+  labels:
+    app: identity-core
+    version: "1.0.0"
+    app.kubernetes.io/name: identity-core
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: microservice
+    app.kubernetes.io/part-of: identity-platform
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: identity-core
+  # RollingUpdate con maxUnavailable: 0 garantiza zero-downtime.
+  # Siempre hay al menos 2 pods disponibles durante el despliegue.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: identity-core
+        version: "1.0.0"
+    spec:
+      serviceAccountName: identity-core
+
+      # No montar el token del API server — identity-core no lo necesita.
+      # Declarado aqui tambien como defensa en profundidad, aunque ya esta
+      # en false a nivel de ServiceAccount.
+      automountServiceAccountToken: false
+
+      # -----------------------------------------------------------------------
+      # Security context del Pod
+      # Aplica a todos los contenedores. El contenedor puede sobreescribir
+      # valores individuales en su propio securityContext.
+      # -----------------------------------------------------------------------
+      securityContext:
+        # El proceso principal no puede ser UID 0.
+        # Kubernetes rechaza el pod si el contenedor intenta correr como root.
+        runAsNonRoot: true
+
+        # seccompProfile RuntimeDefault — aplica el perfil seccomp del runtime
+        # (containerd/crun). Bloquea syscalls raramente necesarias para
+        # aplicaciones de negocio. Requerido por PSS Restricted >= 1.25.
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: identity-core
+          # En produccion usar digest para builds reproducibles:
+          # image: registry.example.com/serverus/identity-core@sha256:<digest>
+          image: registry.example.com/serverus/identity-core:1.0.0-native
+          imagePullPolicy: Always
+
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # -----------------------------------------------------------------
+          # Security context del contenedor
+          # -----------------------------------------------------------------
+          securityContext:
+            # UID del proceso. Declarado aqui — no en el Dockerfile USER
+            # solamente — para que el admission controller pueda validarlo.
+            runAsUser: 1001
+
+            # GID 0 (root) requerido por el patron chgrp -R 0 + chmod g=u
+            # del Dockerfile. El proceso corre con GID 0 pero sin privilegios
+            # de root (runAsNonRoot lo garantiza a nivel de UID).
+            runAsGroup: 0
+
+            # El proceso no puede escalar privilegios via setuid/setgid.
+            # Obligatorio en PSS Restricted.
+            allowPrivilegeEscalation: false
+
+            # Sistema de archivos raiz de solo lectura.
+            # El binario nativo de Quarkus no escribe en disco en runtime.
+            # /tmp se monta como emptyDir para librerias que necesiten tmpdir.
+            readOnlyRootFilesystem: true
+
+            # Eliminar todas las Linux capabilities.
+            # Quarkus Native sobre HTTP no requiere ninguna capability.
+            capabilities:
+              drop:
+                - ALL
+
+          # -----------------------------------------------------------------
+          # Configuracion — ConfigMap y Secret
+          # -----------------------------------------------------------------
+          envFrom:
+            - configMapRef:
+                name: identity-core-config
+
+          env:
+            - name: QUARKUS_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: identity-core-db-credentials
+                  key: username
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: identity-core-db-credentials
+                  key: password
+
+          # -----------------------------------------------------------------
+          # Resource limits
+          # Quarkus Native en reposo: ~50-80MB RSS.
+          # Con carga de identidad digital: ~100-150MB RSS.
+          # limits.memory: 256Mi deja margen para picos sin OOMKilled.
+          # Sin requests definidos el scheduler puede colocar el pod en un
+          # nodo sin capacidad real — siempre definir ambos.
+          # -----------------------------------------------------------------
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+          # -----------------------------------------------------------------
+          # Probes
+          #
+          # startupProbe: da tiempo al arranque inicial antes de activar
+          #   liveness. Native arranca en <100ms pero Flyway migration puede
+          #   tomar varios segundos. 30 * 5s = 150s maximo de startup.
+          #
+          # readinessProbe: saca el pod del Service endpoint si no puede
+          #   atender trafico. /q/health/ready incluye PersonRepositoryHealthCheck
+          #   que valida Oracle. Si Oracle esta caida, el pod sale del balanceo
+          #   pero no se reinicia — el circuit breaker gestiona la recuperacion.
+          #
+          # livenessProbe: reinicia el pod si el proceso esta bloqueado.
+          #   /q/health/live es sintetico, sin dependencias externas.
+          #   periodSeconds: 20 evita reinicios por spikes de latencia transitorios.
+          # -----------------------------------------------------------------
+          startupProbe:
+            httpGet:
+              path: /q/health/started
+              port: http
+            periodSeconds: 5
+            failureThreshold: 30
+            timeoutSeconds: 3
+
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 2
+            failureThreshold: 3
+            successThreshold: 1
+
+          # -----------------------------------------------------------------
+          # Volumenes
+          # readOnlyRootFilesystem: true requiere /tmp escribible explicitamente.
+          # OTel SDK, algunos drivers JDBC y la JVM (en modo JVM) escriben en /tmp.
+          # emptyDir con medium: Memory es tmpfs — no persiste en disco del nodo.
+          # -----------------------------------------------------------------
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi
+
+      # -----------------------------------------------------------------------
+      # Distribucion entre nodos — evita que ambas replicas caigan en el mismo
+      # nodo fisico ante un fallo de hardware o un drain de nodo.
+      # -----------------------------------------------------------------------
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: identity-core
+
+      # Tiempo de gracia para graceful shutdown.
+      # Quarkus drena conexiones HTTP activas antes de terminar.
+      # Debe ser >= al timeout configurado en el ingress controller.
+      terminationGracePeriodSeconds: 30
+
+---
+# -----------------------------------------------------------------------------
+# 6. Service — ClusterIP
+# Expone el Deployment internamente en el cluster.
+# El Ingress enruta al Service, no directamente a los pods.
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: identity-core
+  namespace: identity-core
+  labels:
+    app: identity-core
+  annotations:
+    # Anotaciones para Prometheus ServiceMonitor (kube-prometheus-stack).
+    # Si no se usa ServiceMonitor, el scraping se puede configurar via
+    # anotaciones directamente en el pod.
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/q/metrics"
+    prometheus.io/port: "8080"
+spec:
+  selector:
+    app: identity-core
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
+
+---
+# -----------------------------------------------------------------------------
+# 7. HorizontalPodAutoscaler
+# Escala entre 2 y 6 replicas segun uso de CPU.
+# 2 replicas minimas garantizan disponibilidad durante rolling update.
+# Umbral 70% CPU — ajustar segun el perfil de carga real de Oracle queries.
+# -----------------------------------------------------------------------------
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: identity-core
+  namespace: identity-core
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: identity-core
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+# -----------------------------------------------------------------------------
+# 8. Ingress — TLS termination
+# Kubernetes vainilla — adaptar annotations al ingress controller del cluster:
+#   nginx:      kubernetes.io/ingress.class: nginx
+#   traefik:    ingressClassName: traefik
+#   aws-alb:    kubernetes.io/ingress.class: alb
+#
+# El Secret identity-core-tls debe contener el certificado TLS.
+# En produccion gestionar via cert-manager con Let's Encrypt o CA corporativa.
+# -----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: identity-core
+  namespace: identity-core
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    # Timeout alineado con terminationGracePeriodSeconds del pod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - identity-core.example.com   # reemplazar con el dominio real
+      secretName: identity-core-tls
+  rules:
+    - host: identity-core.example.com  # reemplazar con el dominio real
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: identity-core
+                port:
+                  name: http

@@ -1,29 +1,81 @@
-####
-# This Dockerfile is used in order to build a container that runs the Quarkus application in native (no JVM) mode.
+# =============================================================================
+# identity-core — imagen Native (multistage)
+# Destino: produccion en OpenShift y Kubernetes vainilla
 #
-# Before building the container image run:
+# Stage 1 — BUILD: quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21
+#   Imagen oficial de Quarkus con Mandrel preinstalado y alineado con la
+#   version del framework. Mandrel vive en el builder — no se requiere
+#   instalacion local.
 #
-# ./mvnw package -Dnative
+# Stage 2 — RUNTIME: registry.access.redhat.com/ubi9/ubi-micro:9.4
+#   Sin shell, sin package manager, solo glibc y librerias minimas de RHEL 9.
+#   Certificada para OpenShift y escaneable por Red Hat ACS/StackRox.
 #
-# Then, build the image with:
+# Compatibilidad SCC restricted de OpenShift:
+#   chgrp -R 0 + chmod -R g=u permite que cualquier UID del rango del
+#   namespace pueda ejecutar el binario. USER 1001 aplica en Kubernetes
+#   vainilla; OpenShift lo sobrescribe con el UID del namespace.
 #
-# docker build -f src/main/docker/Dockerfile.native -t quarkus/identity-core .
-#
-# Then run the container using:
-#
-# docker run -i --rm -p 8080:8080 quarkus/identity-core
-#
-# The ` registry.access.redhat.com/ubi9/ubi-minimal:9.7` base image is based on UBI 9.
-# To use UBI 8, switch to `quay.io/ubi8/ubi-minimal:8.10`.
-###
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7
-WORKDIR /work/
-RUN chown 1001 /work \
-    && chmod "g+rwX" /work \
-    && chown 1001:root /work
-COPY --chown=1001:root --chmod=0755 target/*-runner /work/application
+# Uso:
+#   docker build -f Dockerfile.native -t identity-core:native .
+#   podman build -f Dockerfile.native -t identity-core:native .
+# =============================================================================
 
-EXPOSE 8080
+# =============================================================================
+# STAGE 1 — Compilacion nativa con Mandrel
+# =============================================================================
+FROM quay.io/quarkus/ubi9-quarkus-mandrel-builder-image:jdk-21 AS builder
+
+WORKDIR /build
+
+# Cache de dependencias Maven separado del codigo fuente.
+# Si pom.xml no cambia, Docker/Podman reutiliza esta capa y Maven no
+# re-descarga las dependencias en cada rebuild.
+COPY .mvn/  .mvn/
+COPY mvnw   pom.xml ./
+RUN chmod +x mvnw
+
+RUN ./mvnw -B -DskipTests dependency:go-offline
+
+# src/ se copia despues de dependency:go-offline para que cambios en
+# codigo fuente no invaliden la capa de ~200MB de dependencias.
+COPY src/ src/
+RUN ./mvnw -B package -Pnative -DskipTests
+
+# =============================================================================
+# STAGE 2 — Runtime minimo
+# =============================================================================
+FROM registry.access.redhat.com/ubi9/ubi-micro:9.4
+
+LABEL org.opencontainers.image.title="identity-core" \
+      org.opencontainers.image.description="Servicio de identidad digital — Native" \
+      org.opencontainers.image.version="1.0.0-SNAPSHOT" \
+      org.opencontainers.image.vendor="Serverus" \
+      org.opencontainers.image.base.name="registry.access.redhat.com/ubi9/ubi-micro:9.4"
+
+WORKDIR /deployments
+
+COPY --from=builder /build/target/*-runner /deployments/application
+
+# Permisos OpenShift SCC restricted:
+#   chgrp -R 0       — grupo root en todos los archivos del workdir
+#   chmod -R g=u     — grupo obtiene exactamente los permisos del owner
+#   chmod 0555       — binario: r-xr-xr-x
+#                      lectura y ejecucion para owner, grupo y otros
+#                      sin bit de escritura — el binario nativo es inmutable
+#                      en runtime, escribirlo seria una anomalia de seguridad
+RUN chgrp -R 0 /deployments && \
+    chmod -R g=u /deployments && \
+    chmod 0555 /deployments/application
+
+# UID 1001 para Kubernetes vainilla.
+# OpenShift SCC restricted asigna UID arbitrario del rango del namespace;
+# los permisos g=u garantizan que ese UID pueda ejecutar el binario.
 USER 1001
 
-ENTRYPOINT ["./application", "-Dquarkus.http.host=0.0.0.0"]
+EXPOSE 8080
+
+ENV QUARKUS_HTTP_HOST=0.0.0.0 \
+    QUARKUS_HTTP_PORT=8080
+
+ENTRYPOINT ["/deployments/application"]
