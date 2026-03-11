@@ -51,7 +51,7 @@ class PersonServiceTest {
                         "Person already exists, use update(): " + person.getId()
                 );
             }
-            store.put(person.getId(), person);
+            store.put(person.getId(), snapshot(person));
         }
 
         @Override
@@ -61,19 +61,20 @@ class PersonServiceTest {
                         "Person not found for update: " + person.getId()
                 );
             }
-            store.put(person.getId(), person);
+            store.put(person.getId(), snapshot(person));
         }
 
         @Override
         public Optional<Person> findById(PersonId id) {
-            return Optional.ofNullable(store.get(id));
+            return Optional.ofNullable(store.get(id)).map(this::snapshot);
         }
 
         @Override
         public Optional<Person> findByCurp(Curp curp) {
             return store.values().stream()
                     .filter(p -> p.getCurp().equals(curp))
-                    .findFirst();
+                    .findFirst()
+                    .map(this::snapshot);
         }
 
         @Override
@@ -84,6 +85,19 @@ class PersonServiceTest {
 
         public int size() {
             return store.size();
+        }
+
+        /**
+         * Crea una copia del aggregate para simular la separacion de identidad
+         * de JPA — garantiza que el estado almacenado no es el mismo objeto
+         * en memoria que el que esta siendo modificado.
+         */
+        private Person snapshot(Person p) {
+            return Person.reconstitute(
+                    p.getId(), p.getCurp(), p.getFullName(),
+                    p.getBirthDate(), p.getStatus(),
+                    p.getCreatedAt(), p.getUpdatedAt()
+            );
         }
     }
 
