@@ -10,6 +10,7 @@ import io.serverus.domain.service.PersonService;
 import io.serverus.infrastructure.rest.dto.ErrorResponse;
 import io.serverus.infrastructure.rest.dto.PersonRequest;
 import io.serverus.infrastructure.rest.dto.PersonResponse;
+import io.serverus.infrastructure.rest.dto.StatusRequest;
 import io.serverus.infrastructure.rest.dto.StatusResponse;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
@@ -54,12 +55,6 @@ public class PersonResource {
     @Context
     UriInfo uriInfo;
 
-    /**
-     * Registra una nueva persona en el sistema.
-     *
-     * @param request datos del registro
-     * @return 201 Created con la persona registrada
-     */
     @POST
     @Operation(summary = "Registrar persona", description = "Registra una nueva persona en el sistema de identidad digital")
     @RequestBody(
@@ -89,12 +84,6 @@ public class PersonResource {
         }
     }
 
-    /**
-     * Busca una persona por su identificador unico.
-     *
-     * @param id identificador UUID de la persona
-     * @return 200 OK con la persona encontrada
-     */
     @GET
     @Path("/{id}")
     @Operation(summary = "Buscar persona por ID")
@@ -120,12 +109,6 @@ public class PersonResource {
         }
     }
 
-    /**
-     * Busca una persona por su CURP.
-     *
-     * @param curp CURP en formato RENAPO
-     * @return 200 OK con la persona encontrada
-     */
     @GET
     @Path("/curp/{curp}")
     @Operation(summary = "Buscar persona por CURP")
@@ -150,27 +133,28 @@ public class PersonResource {
         }
     }
 
-    /**
-     * Suspende a una persona activa.
-     *
-     * @param id     identificador UUID de la persona
-     * @param reason motivo de la suspension
-     * @return 200 OK con el estado actualizado
-     */
     @PATCH
     @Path("/{id}/suspend")
     @Operation(summary = "Suspender persona")
+    @RequestBody(
+            required = true,
+            content = @Content(schema = @Schema(implementation = StatusRequest.class))
+    )
     @APIResponse(responseCode = "200", description = "Persona suspendida exitosamente",
             content = @Content(schema = @Schema(implementation = StatusResponse.class)))
     @APIResponse(responseCode = "404", description = "Persona no encontrada",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @APIResponse(responseCode = "409", description = "Transicion de estado no permitida",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    public Response suspend(@PathParam("id") String id, String reason) {
+    public Response suspend(@PathParam("id") String id, @Valid StatusRequest request) {
         try {
             PersonId personId = PersonId.of(id);
-            Person person = personService.suspend(personId, reason);
+            Person person = personService.suspend(personId, request.getReason());
             return Response.ok(StatusResponse.from(person)).build();
+        } catch (ValidationException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
+                    .build();
         } catch (ResourceNotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
@@ -182,27 +166,28 @@ public class PersonResource {
         }
     }
 
-    /**
-     * Reactiva a una persona suspendida.
-     *
-     * @param id     identificador UUID de la persona
-     * @param reason motivo de la reactivacion
-     * @return 200 OK con el estado actualizado
-     */
     @PATCH
     @Path("/{id}/reactivate")
     @Operation(summary = "Reactivar persona")
+    @RequestBody(
+            required = true,
+            content = @Content(schema = @Schema(implementation = StatusRequest.class))
+    )
     @APIResponse(responseCode = "200", description = "Persona reactivada exitosamente",
             content = @Content(schema = @Schema(implementation = StatusResponse.class)))
     @APIResponse(responseCode = "404", description = "Persona no encontrada",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @APIResponse(responseCode = "409", description = "Transicion de estado no permitida",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    public Response reactivate(@PathParam("id") String id, String reason) {
+    public Response reactivate(@PathParam("id") String id, @Valid StatusRequest request) {
         try {
             PersonId personId = PersonId.of(id);
-            Person person = personService.reactivate(personId, reason);
+            Person person = personService.reactivate(personId, request.getReason());
             return Response.ok(StatusResponse.from(person)).build();
+        } catch (ValidationException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
+                    .build();
         } catch (ResourceNotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
@@ -214,27 +199,28 @@ public class PersonResource {
         }
     }
 
-    /**
-     * Revoca a una persona de forma definitiva.
-     *
-     * @param id     identificador UUID de la persona
-     * @param reason motivo de la revocacion
-     * @return 200 OK con el estado actualizado
-     */
     @PATCH
     @Path("/{id}/revoke")
     @Operation(summary = "Revocar persona")
+    @RequestBody(
+            required = true,
+            content = @Content(schema = @Schema(implementation = StatusRequest.class))
+    )
     @APIResponse(responseCode = "200", description = "Persona revocada exitosamente",
             content = @Content(schema = @Schema(implementation = StatusResponse.class)))
     @APIResponse(responseCode = "404", description = "Persona no encontrada",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     @APIResponse(responseCode = "409", description = "Transicion de estado no permitida",
             content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
-    public Response revoke(@PathParam("id") String id, String reason) {
+    public Response revoke(@PathParam("id") String id, @Valid StatusRequest request) {
         try {
             PersonId personId = PersonId.of(id);
-            Person person = personService.revoke(personId, reason);
+            Person person = personService.revoke(personId, request.getReason());
             return Response.ok(StatusResponse.from(person)).build();
+        } catch (ValidationException e) {
+            return Response.status(Response.Status.BAD_REQUEST)
+                    .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
+                    .build();
         } catch (ResourceNotFoundException e) {
             return Response.status(Response.Status.NOT_FOUND)
                     .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))

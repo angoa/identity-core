@@ -1,0 +1,4 @@
+quarkus:
+  oidc:
+    enabled: false
+    tenant-enabled: false
