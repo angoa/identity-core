@@ -348,6 +348,17 @@ class PersonResourceTest {
                     .statusCode(409)
                     .body("errorCode", notNullValue());
         }
+
+        @Test
+        @DisplayName("retorna 400 cuando el ID tiene formato invalido")
+        void shouldReturn400WhenIdIsInvalid() {
+            given()
+                    .contentType(ContentType.JSON)
+                    .body(REASON_JSON)
+                    .when().patch("/persons/not-a-uuid/suspend")
+                    .then()
+                    .statusCode(400);
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -401,6 +412,17 @@ class PersonResourceTest {
                     .when().patch("/persons/" + id + "/reactivate")
                     .then()
                     .statusCode(409);
+        }
+
+        @Test
+        @DisplayName("retorna 400 cuando el ID tiene formato invalido")
+        void shouldReturn400WhenIdIsInvalid() {
+            given()
+                    .contentType(ContentType.JSON)
+                    .body(REASON_JSON)
+                    .when().patch("/persons/not-a-uuid/reactivate")
+                    .then()
+                    .statusCode(400);
         }
     }
 
@@ -456,6 +478,17 @@ class PersonResourceTest {
                     .when().patch("/persons/" + id + "/revoke")
                     .then()
                     .statusCode(409);
+        }
+
+        @Test
+        @DisplayName("retorna 400 cuando el ID tiene formato invalido")
+        void shouldReturn400WhenIdIsInvalid() {
+            given()
+                    .contentType(ContentType.JSON)
+                    .body(REASON_JSON)
+                    .when().patch("/persons/not-a-uuid/revoke")
+                    .then()
+                    .statusCode(400);
         }
     }
 }

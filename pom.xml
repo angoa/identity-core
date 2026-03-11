@@ -55,10 +55,10 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-oidc</artifactId>
         </dependency>
-<!--        <dependency>-->
-<!--            <groupId>io.quarkus</groupId>-->
-<!--            <artifactId>quarkus-jdbc-oracle</artifactId>-->
-<!--        </dependency>-->
+        <!--        <dependency>-->
+        <!--            <groupId>io.quarkus</groupId>-->
+        <!--            <artifactId>quarkus-jdbc-oracle</artifactId>-->
+        <!--        </dependency>-->
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-h2</artifactId>
@@ -130,6 +130,21 @@
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-config-yaml</artifactId>
         </dependency>
+
+        <!--
+            JaCoCo offline instrumentation runtime.
+            Requerido cuando se usa jacoco:instrument en lugar del agente JVM.
+            Quarkus usa classloaders propios que impiden que el agente -javaagent
+            instrumente las clases de infraestructura en runtime; offline
+            instrumentation actua sobre el bytecode antes de que Quarkus las cargue.
+        -->
+        <dependency>
+            <groupId>org.jacoco</groupId>
+            <artifactId>org.jacoco.agent</artifactId>
+            <version>${jacoco.version}</version>
+            <classifier>runtime</classifier>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -164,6 +179,12 @@
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                         <maven.home>${maven.home}</maven.home>
+                        <!--
+                            Indica al runtime de JaCoCo offline donde escribir
+                            los datos de cobertura. Sin esto, la clase
+                            org.jacoco.agent.rt.RT no sabe donde volcar el .exec.
+                        -->
+                        <jacoco-agent.destfile>${project.build.directory}/jacoco.exec</jacoco-agent.destfile>
                     </systemPropertyVariables>
                     <includes>
                         <include>**/*Test.java</include>
@@ -195,12 +216,43 @@
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>${jacoco.version}</version>
                 <executions>
+                    <!--
+                        OFFLINE INSTRUMENTATION — reemplaza prepare-agent.
+
+                        jacoco:instrument modifica el bytecode en target/classes
+                        ANTES de que Quarkus augmentation lo procese. Esto garantiza
+                        que los proxies CDI generados por Quarkus (PersonRepositoryImpl_Subclass,
+                        PersonResource_Subclass, etc.) ya lleven el bytecode de JaCoCo
+                        incrustado, y que la cobertura se registre correctamente aunque
+                        Quarkus use su propio ClassLoader.
+
+                        Fase process-classes: justo despues de compilar, antes de
+                        que quarkus:build haga el augmentation.
+                    -->
                     <execution>
-                        <id>prepare-agent</id>
+                        <id>instrument-classes</id>
+                        <phase>process-classes</phase>
                         <goals>
-                            <goal>prepare-agent</goal>
+                            <goal>instrument</goal>
                         </goals>
                     </execution>
+                    <!--
+                        Restaura los .class originales (sin instrumentacion)
+                        despues de los tests. Sin esto, el jar final contendria
+                        bytecode instrumentado con dependencia en jacoco-agent,
+                        lo que romperia el build de produccion.
+                    -->
+                    <execution>
+                        <id>restore-instrumented-classes</id>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>restore-instrumented-classes</goal>
+                        </goals>
+                    </execution>
+                    <!--
+                        Genera el reporte HTML/XML a partir del jacoco.exec
+                        producido durante los tests.
+                    -->
                     <execution>
                         <id>report</id>
                         <phase>verify</phase>

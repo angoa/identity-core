@@ -58,7 +58,7 @@ quarkus:
     resource-attributes:
       service.name=identity-core
       service.version=1.0.0
-      service.namespace=atdt
+      service.namespace=serverus
       deployment.environment=dev
 
   # ---------------------------------------------------------------------------
@@ -85,6 +85,81 @@ quarkus:
         level: INFO
 
 # -----------------------------------------------------------------------------
+# MicroProfile Fault Tolerance — PersonRepositoryImpl
+#
+# Convencion de nombres MicroProfile:
+#   <clase>/<metodo>/<anotacion>/<parametro>
+#
+# Todos los valores son sobreescribibles via variables de entorno en OpenShift:
+#   MP_FAULT_TOLERANCE_PERSONREPOSITORYIMPL_SAVE_TIMEOUT_VALUE=10000
+# -----------------------------------------------------------------------------
+
+"io.serverus.infrastructure.persistence.repository.PersonRepositoryImpl":
+
+  # -- save --
+  save/Timeout/value: 5000
+  save/CircuitBreaker/requestVolumeThreshold: 10
+  save/CircuitBreaker/failureRatio: 0.5
+  save/CircuitBreaker/delay: 30000
+  save/CircuitBreaker/successThreshold: 2
+
+  # -- update --
+  update/Timeout/value: 5000
+  update/CircuitBreaker/requestVolumeThreshold: 10
+  update/CircuitBreaker/failureRatio: 0.5
+  update/CircuitBreaker/delay: 30000
+  update/CircuitBreaker/successThreshold: 2
+
+  # -- findById --
+  findById/Timeout/value: 2000
+  findById/Retry/maxRetries: 2
+  findById/Retry/delay: 200
+  findById/CircuitBreaker/requestVolumeThreshold: 10
+  findById/CircuitBreaker/failureRatio: 0.5
+  findById/CircuitBreaker/delay: 30000
+  findById/CircuitBreaker/successThreshold: 2
+
+  # -- findByCurp --
+  findByCurp/Timeout/value: 2000
+  findByCurp/Retry/maxRetries: 2
+  findByCurp/Retry/delay: 200
+  findByCurp/CircuitBreaker/requestVolumeThreshold: 10
+  findByCurp/CircuitBreaker/failureRatio: 0.5
+  findByCurp/CircuitBreaker/delay: 30000
+  findByCurp/CircuitBreaker/successThreshold: 2
+
+  # -- existsByCurp --
+  existsByCurp/Timeout/value: 2000
+  existsByCurp/Retry/maxRetries: 2
+  existsByCurp/Retry/delay: 200
+  existsByCurp/CircuitBreaker/requestVolumeThreshold: 10
+  existsByCurp/CircuitBreaker/failureRatio: 0.5
+  existsByCurp/CircuitBreaker/delay: 30000
+  existsByCurp/CircuitBreaker/successThreshold: 2
+
+# -----------------------------------------------------------------------------
+# Perfil test — fault tolerance desactivada para tests de integracion
+#
+# Los @QuarkusTest con H2 no necesitan proteccion de resiliencia y los
+# timeouts interfieren con el tiempo de arranque del contenedor en CI.
+# -----------------------------------------------------------------------------
+"%test":
+  quarkus:
+    oidc:
+      enabled: false
+      tenant-enabled: false
+
+  "io.serverus.infrastructure.persistence.repository.PersonRepositoryImpl":
+    save/Timeout/value: 60000
+    update/Timeout/value: 60000
+    findById/Timeout/value: 60000
+    findById/Retry/maxRetries: 0
+    findByCurp/Timeout/value: 60000
+    findByCurp/Retry/maxRetries: 0
+    existsByCurp/Timeout/value: 60000
+    existsByCurp/Retry/maxRetries: 0
+
+# -----------------------------------------------------------------------------
 # Perfil desarrollo
 # -----------------------------------------------------------------------------
 "%dev":
@@ -108,6 +183,18 @@ quarkus:
         otlp:
           traces:
             endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://otel-collector:4317}
+
+  "io.serverus.infrastructure.persistence.repository.PersonRepositoryImpl":
+    save/Timeout/value: ${REPO_WRITE_TIMEOUT_MS:5000}
+    update/Timeout/value: ${REPO_WRITE_TIMEOUT_MS:5000}
+    findById/Timeout/value: ${REPO_READ_TIMEOUT_MS:2000}
+    findByCurp/Timeout/value: ${REPO_READ_TIMEOUT_MS:2000}
+    existsByCurp/Timeout/value: ${REPO_READ_TIMEOUT_MS:2000}
+    findById/CircuitBreaker/delay: ${REPO_CB_DELAY_MS:30000}
+    findByCurp/CircuitBreaker/delay: ${REPO_CB_DELAY_MS:30000}
+    existsByCurp/CircuitBreaker/delay: ${REPO_CB_DELAY_MS:30000}
+    save/CircuitBreaker/delay: ${REPO_CB_DELAY_MS:30000}
+    update/CircuitBreaker/delay: ${REPO_CB_DELAY_MS:30000}
 
 # -----------------------------------------------------------------------------
 # Metadata OpenAPI

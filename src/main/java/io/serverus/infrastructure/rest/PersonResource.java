@@ -77,10 +77,6 @@ public class PersonResource {
             return Response.status(Response.Status.CONFLICT)
                     .entity(ErrorResponse.of(e.getErrorCode(), e.getMessage(), uriInfo.getPath()))
                     .build();
-        } catch (ValidationException e) {
-            return Response.status(422)
-                    .entity(ErrorResponse.ofField(e.getErrorCode(), e.getMessage(), e.getField(), uriInfo.getPath()))
-                    .build();
         }
     }
 
